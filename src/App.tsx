@@ -1,5 +1,5 @@
-import React, { useState, useRef, useMemo } from 'react';
-import { ClassroomData, ProfileName, ScoredSeat } from './types';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { ClassroomData, ProfileName, ScoredSeat, AnalysisResult } from './types';
 import { DEFAULT_CLASSROOM } from './data/sampleClassroom';
 import { rankAllSeats } from './scoring/engine';
 import { Header } from './components/Header';
@@ -13,6 +13,13 @@ import { SeatInspector } from './components/SeatInspector';
 import { ScanningModal } from './components/ScanningModal';
 import { CameraCaptureModal } from './components/CameraCaptureModal';
 import { CodeViewerModal } from './components/CodeViewerModal';
+import { UploadModal } from './components/UploadModal';
+import { TeacherPOVControlPanel } from './components/TeacherPOVControlPanel';
+import {
+  analyzeClassroomImage,
+  convertAnalysisToClassroomData,
+  generateClientPerspectiveBenches
+} from './services/analysisService';
 import {
   Sparkles,
   Layers,
@@ -21,21 +28,37 @@ import {
   Sliders,
   HelpCircle,
   Trophy,
-  CheckCircle2
+  CheckCircle2,
+  Eye,
+  Camera
 } from 'lucide-react';
 
 export default function App() {
-  const [classroom, setClassroom] = useState<ClassroomData>(DEFAULT_CLASSROOM);
+  const [classroom, setClassroom] = useState<ClassroomData>(() => {
+    const initialAnalysis = generateClientPerspectiveBenches(5, 3);
+    return convertAnalysisToClassroomData(initialAnalysis, DEFAULT_CLASSROOM);
+  });
   const [currentProfile, setCurrentProfile] = useState<ProfileName>('Balanced Student');
   const [imageSrc, setImageSrc] = useState<string>('/sample_classroom.jpg');
-  const [selectedSeatId, setSelectedSeatId] = useState<number | null>(5);
+  const [selectedSeatId, setSelectedSeatId] = useState<number | null>(15);
   const [manualMode, setManualMode] = useState<boolean>(false);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [isScanModalOpen, setIsScanModalOpen] = useState<boolean>(false);
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState<boolean>(false);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState<boolean>(false);
   const [showWorstSeat, setShowWorstSeat] = useState<boolean>(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'duel' | 'leaderboard'>('overview');
+
+  // Teacher POV perspective configuration
+  const [benchesCount, setBenchesCount] = useState<number>(5);
+  const [studentsPerBench, setStudentsPerBench] = useState<number>(3);
+  const [showVisionCone, setShowVisionCone] = useState<boolean>(true);
+  const [showSafetyHeatmap, setShowSafetyHeatmap] = useState<boolean>(true);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [perspectiveAnalysis, setPerspectiveAnalysis] = useState<string>(
+    "Captured from Teacher's Point-of-View at the front lectern. Front row benches are in the primary direct line-of-sight cone; back benches provide visual occlusion and blindspot refuge."
+  );
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -48,6 +71,64 @@ export default function App() {
     if (!selectedSeatId) return null;
     return rankedSeats.find(s => s.seat_id === selectedSeatId) || null;
   }, [selectedSeatId, rankedSeats]);
+
+  // Main Classroom Analysis Engine (Teacher POV)
+  const runClassroomAnalysis = async (
+    targetImage?: string,
+    forcedBenches?: number,
+    forcedCapacity?: number
+  ) => {
+    const currentImg = targetImage || imageSrc;
+    const bCount = forcedBenches ?? benchesCount;
+    const cCount = forcedCapacity ?? studentsPerBench;
+
+    setIsAnalyzing(true);
+    setIsScanning(true);
+
+    let imageBase64: string | undefined = undefined;
+    let imagePath: string | undefined = undefined;
+
+    if (currentImg.startsWith('data:image')) {
+      imageBase64 = currentImg.split(',')[1];
+    } else {
+      imagePath = currentImg.replace(/^\//, '');
+    }
+
+    try {
+      const result: AnalysisResult = await analyzeClassroomImage({
+        imageBase64,
+        imagePath,
+        studentsPerBench: cCount,
+        forcedBenches: bCount
+      });
+
+      setClassroom(prev => convertAnalysisToClassroomData(result, prev));
+      setBenchesCount(result.detectedBenchesCount);
+      setStudentsPerBench(result.studentsPerBench);
+      setPerspectiveAnalysis(result.perspectiveAnalysis);
+
+      if (result.bestSeat?.seat_id) {
+        setSelectedSeatId(result.bestSeat.seat_id);
+      }
+    } catch (e) {
+      console.error('Classroom analysis error:', e);
+    } finally {
+      setIsAnalyzing(false);
+      setIsScanning(false);
+    }
+  };
+
+  // Adjust benches dynamically
+  const handleBenchesChange = (newCount: number) => {
+    setBenchesCount(newCount);
+    runClassroomAnalysis(imageSrc, newCount, studentsPerBench);
+  };
+
+  // Adjust students per bench dynamically
+  const handleCapacityChange = (newCapacity: number) => {
+    setStudentsPerBench(newCapacity);
+    runClassroomAnalysis(imageSrc, benchesCount, newCapacity);
+  };
 
   // Actions
   const handleToggleOccupancy = (id: number) => {
@@ -91,9 +172,13 @@ export default function App() {
   };
 
   const handleResetClassroom = () => {
-    setClassroom(DEFAULT_CLASSROOM);
+    const fresh = generateClientPerspectiveBenches(5, 3);
+    setClassroom(convertAnalysisToClassroomData(fresh, DEFAULT_CLASSROOM));
     setImageSrc('/sample_classroom.jpg');
-    setSelectedSeatId(5);
+    setBenchesCount(5);
+    setStudentsPerBench(3);
+    setSelectedSeatId(fresh.bestSeat.seat_id);
+    setPerspectiveAnalysis(fresh.perspectiveAnalysis);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,11 +187,14 @@ export default function App() {
       const reader = new FileReader();
       reader.onload = event => {
         if (event.target?.result) {
-          setImageSrc(event.target.result as string);
+          const newSrc = event.target.result as string;
+          setImageSrc(newSrc);
+          runClassroomAnalysis(newSrc, benchesCount, studentsPerBench);
         }
       };
       reader.readAsDataURL(file);
     }
+    e.target.value = '';
   };
 
   const handleRunDemoScan = () => {
@@ -117,9 +205,13 @@ export default function App() {
   const handleScanComplete = () => {
     setIsScanModalOpen(false);
     setIsScanning(false);
-    if (bestSeat) {
-      setSelectedSeatId(bestSeat.seat_id);
-    }
+    runClassroomAnalysis(imageSrc, benchesCount, studentsPerBench);
+  };
+
+  const handleImageCapture = (newSrc: string) => {
+    setImageSrc(newSrc);
+    setIsCameraOpen(false);
+    runClassroomAnalysis(newSrc, benchesCount, studentsPerBench);
   };
 
   return (
@@ -139,24 +231,25 @@ export default function App() {
         onProfileChange={setCurrentProfile}
         onRunDemoScan={handleRunDemoScan}
         onOpenCamera={() => setIsCameraOpen(true)}
-        onUploadClick={() => fileInputRef.current?.click()}
+        onUploadClick={() => setIsUploadModalOpen(true)}
         onOpenCodeViewer={() => setIsCodeViewerOpen(true)}
-        isScanning={isScanning}
+        isScanning={isScanning || isAnalyzing}
         manualMode={manualMode}
         onToggleManualMode={() => setManualMode(!manualMode)}
         onResetClassroom={handleResetClassroom}
       />
 
       {/* Main Content Area */}
-      <main className="max-w-7xl mx-auto px-4 lg:px-8 py-6 space-y-8">
-        {/* Quick Tabs & Mission Bar */}
+      <main className="max-w-7xl mx-auto px-4 lg:px-8 py-6 space-y-6">
+        {/* Quick Mission Bar */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900/60 border border-slate-800/80 p-3 rounded-xl">
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-bold">
-              STATUS: MATRIX ONLINE
+            <span className="px-2.5 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono text-xs font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+              TEACHER POV AI VISION ACTIVE
             </span>
-            <span className="text-xs text-slate-400 hidden md:inline">
-              Profile Archetype: <b className="text-white">{currentProfile}</b>
+            <span className="text-xs text-slate-400 hidden md:inline font-mono">
+              Analyzing benches & teacher safety from camera viewpoint
             </span>
           </div>
 
@@ -164,10 +257,10 @@ export default function App() {
             <button
               onClick={handleResetClassroom}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 text-xs rounded-lg transition"
-              title="Reset classroom to verified sample dataset"
+              title="Reset classroom layout to default"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset Layout</span>
+              <span>Reset</span>
             </button>
 
             <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs font-mono">
@@ -199,7 +292,7 @@ export default function App() {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Leaderboard
+                Safety Leaderboard
               </button>
             </div>
           </div>
@@ -208,6 +301,21 @@ export default function App() {
         {/* PRIMARY VIEWPORT: Map + Best Seat Card */}
         {activeTab === 'overview' && (
           <>
+            {/* Teacher POV Bench & Safety Control Panel */}
+            <TeacherPOVControlPanel
+              benchesCount={benchesCount}
+              studentsPerBench={studentsPerBench}
+              onBenchesChange={handleBenchesChange}
+              onCapacityChange={handleCapacityChange}
+              showVisionCone={showVisionCone}
+              onToggleVisionCone={() => setShowVisionCone(!showVisionCone)}
+              showSafetyHeatmap={showSafetyHeatmap}
+              onToggleSafetyHeatmap={() => setShowSafetyHeatmap(!showSafetyHeatmap)}
+              onReAnalyze={() => runClassroomAnalysis()}
+              isAnalyzing={isAnalyzing || isScanning}
+              perspectiveAnalysis={perspectiveAnalysis}
+            />
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* Left Column: Classroom Visualizer Canvas */}
               <div className="lg:col-span-7 space-y-4">
@@ -222,8 +330,14 @@ export default function App() {
                   onAddSeat={handleAddSeat}
                   onUpdateLandmark={handleUpdateLandmark}
                   manualMode={manualMode}
-                  isScanning={isScanning}
+                  isScanning={isScanning || isAnalyzing}
                   imageSrc={imageSrc}
+                  onDropImage={src => {
+                    setImageSrc(src);
+                    runClassroomAnalysis(src, benchesCount, studentsPerBench);
+                  }}
+                  showVisionCone={showVisionCone}
+                  showSafetyHeatmap={showSafetyHeatmap}
                 />
 
                 {/* Seat Inspector Drawer (shows if user clicked a chair) */}
@@ -246,10 +360,10 @@ export default function App() {
                     <div className="flex items-center justify-between">
                       <h2 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-emerald-400" />
-                        Absurdly Precise Telemetry (Seat #{bestSeat.seat_id})
+                        Teacher Avoidance & Telemetry (Seat #{bestSeat.seat_id})
                       </h2>
                       <span className="text-[10px] text-slate-500 font-mono">
-                        σ = ±0.002%
+                        POV: Front Podium
                       </span>
                     </div>
                     <MetricsGrid metrics={bestSeat.metrics} />
@@ -287,8 +401,14 @@ export default function App() {
               onAddSeat={handleAddSeat}
               onUpdateLandmark={handleUpdateLandmark}
               manualMode={manualMode}
-              isScanning={isScanning}
+              isScanning={isScanning || isAnalyzing}
               imageSrc={imageSrc}
+              onDropImage={src => {
+                setImageSrc(src);
+                runClassroomAnalysis(src, benchesCount, studentsPerBench);
+              }}
+              showVisionCone={showVisionCone}
+              showSafetyHeatmap={showSafetyHeatmap}
             />
           </div>
         )}
@@ -308,10 +428,17 @@ export default function App() {
       <CameraCaptureModal
         isOpen={isCameraOpen}
         onClose={() => setIsCameraOpen(false)}
-        onCapture={src => {
+        onCapture={handleImageCapture}
+      />
+      <UploadModal
+        isOpen={isUploadModalOpen}
+        onClose={() => setIsUploadModalOpen(false)}
+        onImageSelected={src => {
           setImageSrc(src);
-          setIsCameraOpen(false);
+          setIsUploadModalOpen(false);
+          runClassroomAnalysis(src, benchesCount, studentsPerBench);
         }}
+        currentImageSrc={imageSrc}
       />
       <CodeViewerModal
         isOpen={isCodeViewerOpen}

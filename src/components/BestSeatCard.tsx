@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScoredSeat } from '../types';
-import { Trophy, Volume2, Sparkles, CheckCircle2, ShieldCheck, Zap } from 'lucide-react';
+import { Trophy, Volume2, Sparkles, ShieldCheck, EyeOff, Layers, CheckCircle2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface BestSeatCardProps {
@@ -27,13 +27,19 @@ export const BestSeatCard: React.FC<BestSeatCardProps> = ({ bestSeat }) => {
   const speakVerdict = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const text = `According to our completely unnecessary analysis, seat number ${bestSeat.seat_id} is mathematically optimal. Final verdict: Sit here.`;
+      const text = `From the teacher's point of view, seat number ${bestSeat.seat_id} in row ${
+        bestSeat.rowNumber || 'back'
+      } is the safest seat in the classroom. Teacher safety rating: ${
+        bestSeat.teacherSafetyScore || bestSeat.final_score.toFixed(0)
+      } percent.`;
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
       utterance.pitch = 1.05;
       window.speechSynthesis.speak(utterance);
     }
   };
+
+  const safetyScore = bestSeat.teacherSafetyScore ?? Math.round(bestSeat.final_score);
 
   return (
     <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500 bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950/40 p-6 md:p-8 shadow-2xl shadow-emerald-950/50">
@@ -58,9 +64,9 @@ export const BestSeatCard: React.FC<BestSeatCardProps> = ({ bestSeat }) => {
 
       <div className="text-center">
         {/* Top label */}
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-mono font-bold tracking-widest uppercase mb-3">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 text-xs font-mono font-bold tracking-widest uppercase mb-2">
           <Trophy className="w-3.5 h-3.5" />
-          MATHEMATICALLY VERIFIED BEST SEAT
+          RANK #1: SAFEST SEAT FROM TEACHER'S POV
         </div>
 
         {/* Seat Number */}
@@ -68,20 +74,44 @@ export const BestSeatCard: React.FC<BestSeatCardProps> = ({ bestSeat }) => {
           SEAT #{bestSeat.seat_id}
         </div>
 
-        {/* Score with absurd precision */}
-        <div className="font-mono text-2xl font-bold text-white mb-3">
-          {bestSeat.final_score.toFixed(2)}{' '}
-          <span className="text-sm font-normal text-slate-400">/ 100.00%</span>
+        {/* Row and Bench Info */}
+        <div className="text-xs font-mono text-slate-300 mb-2">
+          {bestSeat.rowNumber ? `Row ${bestSeat.rowNumber} Bench` : 'Rear Bench'} • {bestSeat.label}
+        </div>
+
+        {/* Score with absurd precision & Teacher Safety */}
+        <div className="flex items-center justify-center gap-3 my-2">
+          <div className="bg-slate-950/80 border border-emerald-500/40 px-3 py-1.5 rounded-xl font-mono text-center">
+            <span className="text-[10px] text-slate-400 block uppercase">Teacher Safety Score</span>
+            <span className="text-2xl font-black text-emerald-400">{safetyScore}%</span>
+          </div>
+
+          <div className="bg-slate-950/80 border border-slate-800 px-3 py-1.5 rounded-xl font-mono text-center">
+            <span className="text-[10px] text-slate-400 block uppercase">Overall Matrix</span>
+            <span className="text-2xl font-bold text-white">{bestSeat.final_score.toFixed(1)}%</span>
+          </div>
         </div>
 
         {/* Big Verdict Pill */}
-        <div className="inline-block bg-emerald-400 text-slate-950 font-black px-6 py-2 rounded-xl text-base tracking-wider uppercase shadow-lg shadow-emerald-500/30 mb-4 animate-pulse">
+        <div className="inline-block bg-emerald-400 text-slate-950 font-black px-6 py-2 rounded-xl text-sm md:text-base tracking-wider uppercase shadow-lg shadow-emerald-500/30 mb-3 animate-pulse">
           FINAL VERDICT: SIT HERE.
         </div>
 
+        {/* Tactical reasoning */}
+        <div className="bg-slate-950/70 border border-slate-800/90 rounded-xl p-3 max-w-md mx-auto mb-3 text-left">
+          <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-400 mb-1">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Tactical Teacher POV Analysis</span>
+          </div>
+          <p className="text-xs text-slate-300 font-sans leading-relaxed">
+            {bestSeat.notes ||
+              `Positioned in Row ${bestSeat.rowNumber || 4}, maximizing optical distance from the teacher's podium. Front student heads create visual occlusion, dampening eye-contact and question risk.`}
+          </p>
+        </div>
+
         {/* Funny quote */}
-        <p className="text-sm md:text-base italic text-slate-300 max-w-md mx-auto mb-4 font-serif">
-          "{bestSeat.funny_verdict || 'The AI has determined that this is the least regrettable chair.'}"
+        <p className="text-xs italic text-slate-400 max-w-md mx-auto mb-3 font-serif">
+          "{bestSeat.funny_verdict || 'The AI has mathematically confirmed this is the optimal stealth sanctuary.'}"
         </p>
 
         {/* Personality & Designation */}
@@ -89,7 +119,7 @@ export const BestSeatCard: React.FC<BestSeatCardProps> = ({ bestSeat }) => {
           <span>Designation:</span>
           <span className="font-bold text-slate-200">{bestSeat.personality}</span>
           <span className="text-slate-600">|</span>
-          <span className="text-emerald-400">Rank #1 of {bestSeat.rank || 1}</span>
+          <span className="text-emerald-400">Gaze Angle: {bestSeat.teacherGazeAngle || 'Peripheral'}</span>
         </div>
       </div>
     </div>

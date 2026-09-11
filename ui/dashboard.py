@@ -30,7 +30,10 @@ def render_sidebar():
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("2. Classroom Input")
-    input_source = st.sidebar.radio("Input Source:", ["Use Sample Classroom", "Upload Image", "Webcam / Camera"])
+    input_source = st.sidebar.radio(
+        "Input Source:",
+        ["Use Sample Classroom", "Upload Image", "Laptop Webcam"]
+    )
     
     st.sidebar.markdown("---")
     st.sidebar.subheader("3. Mode & Options")

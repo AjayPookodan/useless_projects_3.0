@@ -61,13 +61,37 @@ def main():
         else:
             image = Image.new("RGB", (800, 600), color=(240, 243, 246))
     elif controls["input_source"] == "Upload Image":
-        uploaded_file = st.sidebar.file_uploader("Upload Classroom Photo", type=["jpg", "jpeg", "png", "webp"])
+        st.info("📁 **Upload a classroom photo below or from the sidebar:**")
+        uploaded_file = st.file_uploader("Upload Classroom Photo", type=["jpg", "jpeg", "png", "webp"], key="main_uploader")
         if uploaded_file:
             image = Image.open(uploaded_file)
-    elif controls["input_source"] == "Webcam / Camera":
-        camera_file = st.sidebar.camera_input("Capture Classroom")
+        else:
+            st.caption("Don't have an image on hand? Click below to test with a preset classroom:")
+            pcol1, pcol2 = st.columns(2)
+            with pcol1:
+                if st.button("🏫 Load University Auditorium", use_container_width=True):
+                    image = Image.open("data/auditorium_hall.jpg")
+            with pcol2:
+                if st.button("🏢 Load Seminar Room", use_container_width=True):
+                    image = Image.open("data/seminar_room.jpg")
+    elif controls["input_source"] in ["Laptop Webcam", "Webcam / Camera"]:
+        st.write("💻 **Laptop Integrated Webcam Capture:**")
+        st.caption("Point your laptop screen/camera towards the classroom desks and click 'Take Photo'.")
+        camera_file = st.camera_input("Laptop Webcam Photo")
         if camera_file:
             image = Image.open(camera_file)
+        else:
+            st.markdown("---")
+            st.markdown("##### ⚠️ Laptop webcam blocked or need a test image?")
+            fcol1, fcol2 = st.columns(2)
+            with fcol1:
+                if st.button("📸 Snap Simulated Classroom Feed", type="secondary", use_container_width=True):
+                    image = Image.open("data/classroom.jpg")
+                    st.success("Snapshot captured from classroom feed!")
+            with fcol2:
+                alt_file = st.file_uploader("Or upload image from laptop disk", type=["jpg", "jpeg", "png", "webp"], key="cam_fallback_file")
+                if alt_file:
+                    image = Image.open(alt_file)
 
     if image is None:
         st.info("👈 Please select a classroom input source in the sidebar (or click 'Use Sample Classroom' for an instant demo).")
