@@ -1,0 +1,6 @@
+{
+  "name": "Best Seat Detector",
+  "description": "An over-engineered AI seating optimization system that scans classrooms to determine the mathematically optimal seat.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
